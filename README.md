@@ -105,3 +105,4 @@ App buttons: **AUTO** sets `mode`, **ON**/**OFF** set `pump/command`.
   — never commit real credentials.
 - The database rules above are wide open (dev only). Tighten them before
   shipping anything real.
+# sayem_eee
