@@ -103,18 +103,36 @@ Output: `build/app/outputs/flutter-apk/app-release.apk`
    }
    ```
 
-## Microcontroller (ESP32) integration
+## Microcontroller (ESP32) firmware
 
-The ESP32 side is not part of this repo. It should:
+Firmware lives in [`esp32/smart_irrigation/`](esp32/smart_irrigation/).
 
-- Write sensor readings to `moisture`, `ph`, `tank`.
-- Write `pump/status` to reflect the pump's actual state.
-- Read `mode` and `pump/command` and act on them (run its own
-  auto-irrigation logic when `mode == "AUTO"`, otherwise obey
-  `pump/command`).
+- Reads soil moisture (analog pin 34) and pH (analog pin 35), publishes
+  them plus tank status to `moisture`, `ph`, `tank`.
+- Drives a relay (pin 26) for the pump and reports its real state to
+  `pump/status`.
+- Reads `mode`: runs its own auto-irrigation logic (moisture below
+  threshold → pump on) when `mode == "AUTO"`, otherwise obeys whatever
+  the app last wrote to `pump/command`.
 
-Use the `Firebase ESP Client` (mobizt) Arduino library with the same
-`FIREBASE_DATABASE_URL` and `FIREBASE_API_KEY` from `.env`.
+### Setup
+
+1. Arduino IDE → Library Manager → install **Firebase ESP Client**
+   (by mobizt).
+2. Copy the credentials template and fill it in:
+   ```bash
+   cp esp32/smart_irrigation/secrets.h.example esp32/smart_irrigation/secrets.h
+   ```
+   ```
+   WIFI_SSID, WIFI_PASSWORD           — your network
+   FIREBASE_API_KEY                   — same value as .env's FIREBASE_API_KEY
+   FIREBASE_DATABASE_URL              — same value as .env's FIREBASE_DATABASE_URL
+   ```
+3. Adjust `MOISTURE_PIN`, `PH_PIN`, `PUMP_RELAY_PIN`, and the pH
+   calibration formula in `readPh()` to match your actual sensors.
+4. Flash `smart_irrigation.ino` to the board.
+
+`secrets.h` is gitignored — never commit it.
 
 ## Project structure
 
@@ -123,6 +141,7 @@ lib/
   main.dart              app UI + Firebase read/write logic (single screen)
   firebase_options.dart  reads Firebase config from --dart-define values
 android/                 standard Flutter Android project
-.env.example             credential template (commit this)
-.env                     real credentials (gitignored, not committed)
+esp32/smart_irrigation/  ESP32 firmware (Arduino sketch)
+.env.example             app credential template (commit this)
+.env                     real app credentials (gitignored, not committed)
 ```
