@@ -1,41 +1,45 @@
 # Smart Irrigation
 
-Android app for an IoT soil-moisture / pH / tank / pump monitoring and
-control system. Single screen, no login, backed by Firebase Realtime
-Database.
+Android app + ESP32 firmware for a soil moisture / pH / tank / pump
+system, synced through Firebase Realtime Database. No login, one screen.
 
-## Stack
-
-- Flutter + Dart
-- Firebase Realtime Database (`firebase_core`, `firebase_database`)
-- No auth, no local storage, no extra screens
-
-## Firebase data structure
+## What's in here
 
 ```
-moisture        number   (%)
-ph              number
-tank            string   "OK" | "LOW"
-pump/status     string   "ON" | "OFF"   — set by the microcontroller
-pump/command    string   "ON" | "OFF"   — set by the app
-mode            string   "AUTO" | "MANUAL"
+lib/           Flutter app
+android/       Android project
+esp32/         ESP32 firmware (Arduino)
 ```
 
-The app only ever writes `mode` and `pump/command`. Everything else
-(`moisture`, `ph`, `tank`, `pump/status`) is written by the microcontroller
-and read live by the app.
+## 1. Firebase project
 
-## Project setup
+1. Create a project at [console.firebase.google.com](https://console.firebase.google.com)
+2. Add an Android app with package name `com.syem.eee.syem_eee`
+3. Build → Realtime Database → Create Database
+4. Rules tab → paste this and publish:
+   ```json
+   { "rules": { ".read": true, ".write": true } }
+   ```
+5. Data tab → import this JSON at the root:
+   ```json
+   {
+     "moisture": 42,
+     "ph": 6.5,
+     "tank": "OK",
+     "pump": { "status": "OFF", "command": "OFF" },
+     "mode": "AUTO"
+   }
+   ```
+6. Project Settings → General → your Android app → grab: API key, App ID,
+   Sender ID, Project ID, Database URL, Storage bucket
 
-### 1. Credentials
-
-Firebase config is not committed to this repo. Copy the template and fill
-it in with your Firebase project's values (Firebase Console → Project
-Settings → General → your Android app):
+## 2. App setup
 
 ```bash
 cp .env.example .env
 ```
+
+Fill `.env` with the values from step 1.6:
 
 ```
 FIREBASE_API_KEY=
@@ -46,102 +50,58 @@ FIREBASE_DATABASE_URL=
 FIREBASE_STORAGE_BUCKET=
 ```
 
-Also copy the Android Gradle config template and fill it the same way, or
-download the real file from the Firebase Console (Project Settings →
-your Android app → `google-services.json`):
-
-```bash
-cp android/app/google-services.json.example android/app/google-services.json
-```
-
-### 2. Install dependencies
+Download `google-services.json` from Project Settings → your Android app,
+save it as `android/app/google-services.json`.
 
 ```bash
 flutter pub get
-```
-
-### 3. Run
-
-Credentials are injected at build/run time via `--dart-define-from-file`,
-so always pass the `.env` file:
-
-```bash
 flutter run --dart-define-from-file=.env
 ```
 
-### 4. Build a release APK
+Build a release APK:
 
 ```bash
 flutter build apk --release --dart-define-from-file=.env
 ```
 
-Output: `build/app/outputs/flutter-apk/app-release.apk`
+APK output: `build/app/outputs/flutter-apk/app-release.apk`
 
-## Firebase project setup (one-time)
+**Always pass `--dart-define-from-file=.env`** — without it the app has no
+Firebase credentials and won't connect.
 
-1. Create a Firebase project and add an Android app with package name
-   `com.syem.eee.syem_eee`.
-2. Enable **Realtime Database** (Build → Realtime Database → Create
-   Database).
-3. Seed initial data at the database root:
-   ```json
-   {
-     "moisture": 42,
-     "ph": 6.5,
-     "tank": "OK",
-     "pump": { "status": "OFF", "command": "OFF" },
-     "mode": "AUTO"
-   }
-   ```
-4. Set database rules for development (tighten before production):
-   ```json
-   {
-     "rules": {
-       ".read": true,
-       ".write": true
-     }
-   }
-   ```
+## 3. ESP32 setup
 
-## Microcontroller (ESP32) firmware
-
-Firmware lives in [`esp32/smart_irrigation/`](esp32/smart_irrigation/).
-
-- Reads soil moisture (analog pin 34) and pH (analog pin 35), publishes
-  them plus tank status to `moisture`, `ph`, `tank`.
-- Drives a relay (pin 26) for the pump and reports its real state to
-  `pump/status`.
-- Reads `mode`: runs its own auto-irrigation logic (moisture below
-  threshold → pump on) when `mode == "AUTO"`, otherwise obeys whatever
-  the app last wrote to `pump/command`.
-
-### Setup
-
-1. Arduino IDE → Library Manager → install **Firebase ESP Client**
-   (by mobizt).
-2. Copy the credentials template and fill it in:
-   ```bash
+1. Arduino IDE → Library Manager → install **Firebase ESP Client** (mobizt)
+2. ```bash
    cp esp32/smart_irrigation/secrets.h.example esp32/smart_irrigation/secrets.h
    ```
+3. Fill `secrets.h`:
    ```
-   WIFI_SSID, WIFI_PASSWORD           — your network
-   FIREBASE_API_KEY                   — same value as .env's FIREBASE_API_KEY
-   FIREBASE_DATABASE_URL              — same value as .env's FIREBASE_DATABASE_URL
+   WIFI_SSID / WIFI_PASSWORD     your network
+   FIREBASE_API_KEY              same as .env
+   FIREBASE_DATABASE_URL         same as .env
    ```
-3. Adjust `MOISTURE_PIN`, `PH_PIN`, `PUMP_RELAY_PIN`, and the pH
-   calibration formula in `readPh()` to match your actual sensors.
-4. Flash `smart_irrigation.ino` to the board.
+4. In `smart_irrigation.ino`, set `MOISTURE_PIN`, `PH_PIN`, `PUMP_RELAY_PIN`
+   to match your wiring, and adjust the pH formula in `readPh()` for your
+   sensor's calibration
+5. Flash it
 
-`secrets.h` is gitignored — never commit it.
+## How it talks
 
-## Project structure
+| Path           | Who writes it | Who reads it |
+|----------------|----------------|--------------|
+| `moisture`     | ESP32          | App          |
+| `ph`           | ESP32          | App          |
+| `tank`         | ESP32          | App          |
+| `pump/status`  | ESP32          | App          |
+| `pump/command` | App            | ESP32        |
+| `mode`         | App            | ESP32        |
 
-```
-lib/
-  main.dart              app UI + Firebase read/write logic (single screen)
-  firebase_options.dart  reads Firebase config from --dart-define values
-android/                 standard Flutter Android project
-esp32/smart_irrigation/  ESP32 firmware (Arduino sketch)
-.env.example             app credential template (commit this)
-.env                     real app credentials (gitignored, not committed)
-```
+App buttons: **AUTO** sets `mode`, **ON**/**OFF** set `pump/command`.
+
+## Notes
+
+- `.env`, `google-services.json`, and `esp32/.../secrets.h` are gitignored
+  — never commit real credentials.
+- The database rules above are wide open (dev only). Tighten them before
+  shipping anything real.
